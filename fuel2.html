@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Trip Fuel Cost Calculator</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 10px; font-size: 22px; }
+    .topbar { display:flex; align-items:center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .pill { padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(127,127,127,0.35); background: rgba(127,127,127,0.10); font-size: 13px; }
+    .muted { opacity: 0.85; }
+    .card { border: 1px solid rgba(127,127,127,0.35); border-radius: 12px; padding: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+    label { display: block; font-size: 13px; margin: 0 0 6px; opacity: 0.9; }
+    input, select, textarea {
+      width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(127,127,127,0.35); background: transparent;
+    }
+    textarea { min-height: 100px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    button {
+      padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(127,127,127,0.35);
+      background: rgba(127,127,127,0.12); cursor: pointer;
+    }
+    button:hover { background: rgba(127,127,127,0.18); }
+    button.danger { border-color: rgba(220,50,50,0.55); }
+    button.primary { border-color: rgba(80,160,255,0.55); }
+    .out { margin-top: 14px; padding: 12px; border-radius: 10px; background: rgba(127,127,127,0.12); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .err { color: #d11; }
+    .kvs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    @media (max-width: 640px) { .kvs { grid-template-columns: 1fr; } }
+    .kv { padding: 10px; border-radius: 10px; border: 1px solid rgba(127,127,127,0.25); }
+    .kv .k { font-size: 12px; opacity: 0.8; }
+    .kv .v { margin-top: 4px; font-weight: 650; }
+    .section-title { margin: 18px 0 10px; font-size: 15px; opacity: 0.95; }
+    .hr { height: 1px; background: rgba(127,127,127,0.25); margin: 16px 0; }
+    .triplist { display: grid; gap: 10px; }
+    .tripitem {
+      display:flex; align-items:center; justify-content: space-between; gap: 10px;
+      padding: 10px; border-radius: 10px; border: 1px solid rgba(127,127,127,0.25);
+      background: rgba(127,127,127,0.06);
+    }
+    .tripmeta { display:flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .tripmeta .name { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tripmeta .sub { font-size: 12px; opacity: 0.85; }
+    .actions { display:flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    dialog {
+      border: 1px solid rgba(127,127,127,0.35);
+      border-radius: 12px;
+      padding: 14px;
+      max-width: 820px;
+      width: calc(100% - 24px);
+      background: Canvas;
+      color: CanvasText;
+    }
+    dialog::backdrop { background: rgba(0,0,0,0.35); }
+    .tiny { font-size: 12px; opacity: 0.85; }
+    .two-col { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 820px) { .two-col { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Trip Fuel Cost Calculator</h1>
+
+    <div class="topbar">
+      <span class="pill" id="activeTripPill">No active trip</span>
+      <button class="primary" id="newTripBtn">New trip</button>
+      <button id="manageTripsBtn">Trips</button>
+      <button id="exportBtn">Export JSON</button>
+      <button id="importBtn">Import JSON</button>
+      <span class="pill muted" id="autosavePill">Autosave: on</span>
+    </div>
+
+    <p class="muted" style="margin: 0 0 14px;">
+      Assumes you refueled to <span class="mono">max autonomy</span> at the start, and fuel price is constant.
+      Trip cost can exceed refill cost if you also consumed part of the initial fuel (valued at the same €/km).
+    </p>
+
+    <div class="card" id="calculatorCard" style="display:none;">
+      <div class="grid">
+        <div>
+          <label for="initial">Initial autonomy (km)</label>
+          <input id="initial" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 40" />
+        </div>
+        <div>
+          <label for="end">End autonomy (km)</label>
+          <input id="end" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 90" />
+        </div>
+        <div>
+          <label for="max">Max autonomy (km, full tank)</label>
+          <input id="max" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 300" />
+        </div>
+        <div>
+          <label for="fuel">Total refill cost (€)</label>
+          <input id="fuel" type="number" inputmode="decimal" step="0.01" placeholder="e.g. 70" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="calcBtn">Calculate</button>
+        <button id="clearValuesBtn">Clear values</button>
+      </div>
+
+      <div id="output" class="out" style="display:none;"></div>
+
+      <div class="section-title">Formula</div>
+      <div class="mono tiny">
+        km_added = max - initial<br/>
+        €/km = fuel_cost / km_added<br/>
+        km_used = max - end<br/>
+        trip_cost = km_used * €/km
+      </div>
+    </div>
+
+    <div class="card" id="noTripCard">
+      <div class="section-title" style="margin-top:0;">Step 1: Create a trip</div>
+      <p class="muted" style="margin:0;">
+        Create your first trip to start. Your inputs will be saved automatically and will persist after refresh.
+      </p>
+      <div class="row">
+        <button class="primary" id="newTripBtn2">Create trip</button>
+        <button id="manageTripsBtn2">Manage trips</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New/Edit Trip -->
+  <dialog id="tripDialog">
+    <form method="dialog" id="tripForm">
+      <div class="section-title" style="margin-top:0;" id="tripDialogTitle">New trip</div>
+
+      <div class="grid">
+        <div>
+          <label for="tripName">Trip name</label>
+          <input id="tripName" type="text" placeholder="Trip dd/MM/yyyy" />
+          <div class="tiny muted" style="margin-top:6px;">Default is today: <span class="mono" id="defaultTripName"></span></div>
+        </div>
+        <div>
+          <label for="tripPersons">Number of persons</label>
+          <input id="tripPersons" type="number" inputmode="numeric" step="1" min="1" placeholder="Optional (default 1)" />
+          <div class="tiny muted" style="margin-top:6px;">Used to divide the total cost per person.</div>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="row">
+        <button class="primary" value="ok" id="tripSaveBtn">Save</button>
+        <button value="cancel">Cancel</button>
+      </div>
+
+      <input type="hidden" id="tripEditingId" />
+    </form>
+  </dialog>
+
+  <!-- Trip Manager -->
+  <dialog id="manageDialog">
+    <form method="dialog">
+      <div class="section-title" style="margin-top:0;">Trips</div>
+      <div class="triplist" id="tripList"></div>
+      <div class="hr"></div>
+      <div class="row">
+        <button class="primary" id="newTripBtn3" value="cancel" type="button">New trip</button>
+        <button value="ok">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Export -->
+  <dialog id="exportDialog">
+    <form method="dialog">
+      <div class="section-title" style="margin-top:0;">Export JSON</div>
+      <p class="muted" style="margin:0 0 10px;">Copy the JSON below and save it somewhere safe.</p>
+      <textarea id="exportText" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="primary" id="copyExportBtn" value="cancel" type="button">Copy</button>
+        <button value="ok">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Import -->
+  <dialog id="importDialog">
+    <form method="dialog" id="importForm">
+      <div class="section-title" style="margin-top:0;">Import JSON</div>
+      <p class="muted" style="margin:0 0 10px;">
+        Paste JSON exported from this app. This will replace your current saved data.
+      </p>
+      <textarea id="importText" spellcheck="false" placeholder='{"version":1,"activeTripId":"...","trips":[...]}'></textarea>
+      <div class="row">
+        <button class="primary" id="doImportBtn" value="ok">Import</button>
+        <button value="cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const STORAGE_KEY = "tripFuelCostApp.v1";
+
+    function pad2(n) { return String(n).padStart(2, "0"); }
+    function todayName() {
+      const d = new Date();
+      return `Trip ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+    }
+    function nowIso() { return new Date().toISOString(); }
+    function uid() {
+      // stable-enough for local usage
+      return "t_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return { version: 1, activeTripId: null, trips: [] };
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") throw new Error("Invalid state");
+        if (!Array.isArray(parsed.trips)) parsed.trips = [];
+        if (!("version" in parsed)) parsed.version = 1;
+        if (!("activeTripId" in parsed)) parsed.activeTripId = null;
+        return parsed;
+      } catch {
+        return { version: 1, activeTripId: null, trips: [] };
+      }
+    }
+
+    function saveState(state) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function getTrip(state, tripId) {
+      return state.trips.find(t => t.id === tripId) || null;
+    }
+
+    function setActiveTrip(state, tripId) {
+      state.activeTripId = tripId;
+      saveState(state);
+      render();
+    }
+
+    function deleteTrip(state, tripId) {
+      state.trips = state.trips.filter(t => t.id !== tripId);
+      if (state.activeTripId === tripId) {
+        state.activeTripId = state.trips.length ? state.trips[0].id : null;
+      }
+      saveState(state);
+      render();
+    }
+
+    function updateTrip(state, tripId, patch) {
+      const t = getTrip(state, tripId);
+      if (!t) return;
+      Object.assign(t, patch);
+      t.updatedAt = nowIso();
+      saveState(state);
+      render();
+    }
+
+    function createTrip(state, name, persons) {
+      const t = {
+        id: uid(),
+        name: (name || "").trim() || todayName(),
+        persons: Number.isFinite(persons) && persons >= 1 ? Math.floor(persons) : 1,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        inputs: { initial: "", end: "", max: "", fuel: "" }
+      };
+      state.trips.unshift(t);
+      state.activeTripId = t.id;
+      saveState(state);
+      render();
+    }
+
+    function setTripInput(state, tripId, key, value) {
+      const t = getTrip(state, tripId);
+      if (!t) return;
+      if (!t.inputs) t.inputs = { initial: "", end: "", max: "", fuel: "" };
+      t.inputs[key] = value;
+      t.updatedAt = nowIso();
+      saveState(state);
+    }
+
+    function parseNumValue(str) {
+      const v = String(str ?? "").trim();
+      if (v === "") return NaN;
+      return Number(v);
+    }
+
+    function fmt(n, decimals) {
+      if (!Number.isFinite(n)) return "NaN";
+      return n.toFixed(decimals);
+    }
+
+    function calculateTripCost(inputs) {
+      const initial = parseNumValue(inputs.initial);
+      const end = parseNumValue(inputs.end);
+      const max = parseNumValue(inputs.max);
+      const fuel = parseNumValue(inputs.fuel);
+
+      if (![initial, end, max, fuel].every(Number.isFinite)) {
+        return { ok: false, error: "Please fill all fields with valid numbers." };
+      }
+      if (max <= 0) return { ok: false, error: "Max autonomy must be > 0." };
+      if (initial < 0 || end < 0) return { ok: false, error: "Autonomy values must be >= 0." };
+      if (fuel < 0) return { ok: false, error: "Fuel cost must be >= 0." };
+      if (initial >= max) return { ok: false, error: "Initial autonomy must be less than max autonomy." };
+      if (end > max) return { ok: false, error: "End autonomy must be <= max autonomy." };
+
+      const kmAdded = max - initial;
+      const eurPerKm = fuel / kmAdded;
+      const kmUsed = max - end;
+      const tripCost = kmUsed * eurPerKm;
+
+      const leftoverFromRefillKm = Math.max(0, end - initial);
+      const usedFromInitialKm = Math.max(0, initial - end);
+
+      return {
+        ok: true,
+        initial, end, max, fuel,
+        kmAdded, eurPerKm, kmUsed, tripCost,
+        leftoverFromRefillKm, usedFromInitialKm
+      };
+    }
+
+    function setOutput(html, isError=false) {
+      const out = $("output");
+      out.style.display = "block";
+      out.innerHTML = isError ? `<div class="err">${html}</div>` : html;
+    }
+
+    function clearOutput() {
+      $("output").style.display = "none";
+      $("output").innerHTML = "";
+    }
+
+    function fillInputsFromTrip(trip) {
+      $("initial").value = trip.inputs?.initial ?? "";
+      $("end").value = trip.inputs?.end ?? "";
+      $("max").value = trip.inputs?.max ?? "";
+      $("fuel").value = trip.inputs?.fuel ?? "";
+    }
+
+    function readInputsToTrip(state, tripId) {
+      setTripInput(state, tripId, "initial", $("initial").value);
+      setTripInput(state, tripId, "end", $("end").value);
+      setTripInput(state, tripId, "max", $("max").value);
+      setTripInput(state, tripId, "fuel", $("fuel").value);
+    }
+
+    function renderTripsList(state) {
+      const list = $("tripList");
+      list.innerHTML = "";
+
+      if (!state.trips.length) {
+        list.innerHTML = `<div class="muted">No trips yet.</div>`;
+        return;
+      }
+
+      state.trips.forEach(t => {
+        const isActive = t.id === state.activeTripId;
+        const persons = t.persons || 1;
+
+        const item = document.createElement("div");
+        item.className = "tripitem";
+
+        const meta = document.createElement("div");
+        meta.className = "tripmeta";
+        meta.innerHTML = `
+          <div class="name">${t.name}${isActive ? ' <span class="pill">active</span>' : ""}</div>
+          <div class="sub">Persons: ${persons} · Updated: ${new Date(t.updatedAt || t.createdAt).toLocaleString()}</div>
+        `;
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        const openBtn = document.createElement("button");
+        openBtn.type = "button";
+        openBtn.textContent = "Open";
+        openBtn.addEventListener("click", () => setActiveTrip(state, t.id));
+
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.textContent = "Edit";
+        editBtn.addEventListener("click", () => openTripDialog({ mode: "edit", tripId: t.id }));
+
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.textContent = "Delete";
+        delBtn.className = "danger";
+        delBtn.addEventListener("click", () => {
+          if (confirm(`Delete "${t.name}"? This cannot be undone.`)) deleteTrip(state, t.id);
+        });
+
+        actions.append(openBtn, editBtn, delBtn);
+        item.append(meta, actions);
+        list.appendChild(item);
+      });
+    }
+
+    function render() {
+      const state = loadState();
+      const activeTrip = state.activeTripId ? getTrip(state, state.activeTripId) : null;
+
+      if (!activeTrip && state.trips.length) {
+        state.activeTripId = state.trips[0].id;
+        saveState(state);
+      }
+
+      const effectiveActive = state.activeTripId ? getTrip(state, state.activeTripId) : null;
+
+      if (!effectiveActive) {
+        $("activeTripPill").textContent = "No active trip";
+        $("calculatorCard").style.display = "none";
+        $("noTripCard").style.display = "block";
+        clearOutput();
+      } else {
+        $("activeTripPill").textContent = `${effectiveActive.name} · Persons: ${effectiveActive.persons || 1}`;
+        $("calculatorCard").style.display = "block";
+        $("noTripCard").style.display = "none";
+        fillInputsFromTrip(effectiveActive);
+      }
+
+      renderTripsList(state);
+    }
+
+    function openTripDialog({ mode, tripId } = { mode: "new", tripId: null }) {
+      const state = loadState();
+      const d = $("tripDialog");
+      const title = $("tripDialogTitle");
+      const defName = todayName();
+      $("defaultTripName").textContent = defName;
+
+      if (mode === "edit" && tripId) {
+        const t = getTrip(state, tripId);
+        if (!t) return;
+        title.textContent = "Edit trip";
+        $("tripName").value = t.name || "";
+        $("tripPersons").value = String(t.persons || 1);
+        $("tripEditingId").value = t.id;
+      } else {
+        title.textContent = "New trip";
+        $("tripName").value = defName;
+        $("tripPersons").value = "";
+        $("tripEditingId").value = "";
+      }
+
+      d.showModal();
+    }
+
+    function openManageDialog() {
+      $("manageDialog").showModal();
+    }
+
+    function openExportDialog() {
+      const state = loadState();
+      const payload = {
+        version: 1,
+        exportedAt: nowIso(),
+        activeTripId: state.activeTripId,
+        trips: state.trips
+      };
+      $("exportText").value = JSON.stringify(payload, null, 2);
+      $("exportDialog").showModal();
+      $("exportText").focus();
+      $("exportText").select();
+    }
+
+    function openImportDialog() {
+      $("importText").value = "";
+      $("importDialog").showModal();
+      $("importText").focus();
+    }
+
+    function applyImport(raw) {
+      let obj;
+      try {
+        obj = JSON.parse(raw);
+      } catch {
+        return { ok: false, error: "Invalid JSON." };
+      }
+      if (!obj || typeof obj !== "object") return { ok: false, error: "Invalid JSON object." };
+      if (!Array.isArray(obj.trips)) return { ok: false, error: 'JSON must include "trips" array.' };
+
+      // light validation/sanitization
+      const trips = obj.trips
+        .filter(t => t && typeof t === "object" && typeof t.id === "string")
+        .map(t => ({
+          id: t.id,
+          name: String(t.name ?? "Trip"),
+          persons: Number.isFinite(Number(t.persons)) && Number(t.persons) >= 1 ? Math.floor(Number(t.persons)) : 1,
+          createdAt: String(t.createdAt ?? nowIso()),
+          updatedAt: String(t.updatedAt ?? t.createdAt ?? nowIso()),
+          inputs: {
+            initial: String(t.inputs?.initial ?? ""),
+            end: String(t.inputs?.end ?? ""),
+            max: String(t.inputs?.max ?? ""),
+            fuel: String(t.inputs?.fuel ?? ""),
+          }
+        }));
+
+      const state = {
+        version: 1,
+        activeTripId: typeof obj.activeTripId === "string" ? obj.activeTripId : (trips[0]?.id ?? null),
+        trips
+      };
+
+      // ensure activeTripId points to existing trip
+      if (state.activeTripId && !state.trips.some(t => t.id === state.activeTripId)) {
+        state.activeTripId = state.trips[0]?.id ?? null;
+      }
+
+      saveState(state);
+      render();
+      return { ok: true };
+    }
+
+    function wireAutosaveInputs() {
+      const onChange = () => {
+        const state = loadState();
+        if (!state.activeTripId) return;
+        readInputsToTrip(state, state.activeTripId);
+      };
+
+      ["initial","end","max","fuel"].forEach(id => {
+        $(id).addEventListener("input", onChange);
+        $(id).addEventListener("change", onChange);
+      });
+    }
+
+    function doCalculate() {
+      const state = loadState();
+      const t = state.activeTripId ? getTrip(state, state.activeTripId) : null;
+      if (!t) {
+        setOutput("Create a trip first.", true);
+        return;
+      }
+
+      // ensure latest typed values saved
+      readInputsToTrip(state, t.id);
+
+      const res = calculateTripCost(t.inputs || {});
+      if (!res.ok) {
+        setOutput(res.error, true);
+        return;
+      }
+
+      const persons = t.persons || 1;
+      const perPerson = res.tripCost / persons;
+
+      setOutput(`
+        <div class="kvs">
+          <div class="kv">
+            <div class="k">Trip fuel cost (€)</div>
+            <div class="v">€ ${fmt(res.tripCost, 2)}</div>
+          </div>
+          <div class="kv">
+            <div class="k">Per person (€)</div>
+            <div class="v">€ ${fmt(perPerson, 2)} <span class="tiny muted">(÷ ${persons})</span></div>
+          </div>
+          <div class="kv">
+            <div class="k">Unit cost</div>
+            <div class="v">€ ${fmt(res.eurPerKm, 4)} <span class="tiny muted">per km</span></div>
+          </div>
+          <div class="kv">
+            <div class="k">km used (from full)</div>
+            <div class="v">${fmt(res.kmUsed, 1)} km</div>
+          </div>
+          <div class="kv">
+            <div class="k">km added by refill</div>
+            <div class="v">${fmt(res.kmAdded, 1)} km</div>
+          </div>
+          <div class="kv">
+            <div class="k">Refill cost (€)</div>
+            <div class="v">€ ${fmt(res.fuel, 2)}</div>
+          </div>
+        </div>
+
+        <div class="muted" style="margin-top:12px;">
+          Notes:
+          <ul style="margin:8px 0 0 18px;">
+            <li>Extra consumption from initial fuel (km): <span class="mono">${fmt(res.usedFromInitialKm, 1)}</span></li>
+            <li>Estimated leftover range attributable to refill (km): <span class="mono">${fmt(res.leftoverFromRefillKm, 1)}</span></li>
+          </ul>
+        </div>
+      `);
+    }
+
+    function clearValuesForActiveTrip() {
+      const state = loadState();
+      const t = state.activeTripId ? getTrip(state, state.activeTripId) : null;
+      if (!t) return;
+
+      t.inputs = { initial: "", end: "", max: "", fuel: "" };
+      t.updatedAt = nowIso();
+      saveState(state);
+      fillInputsFromTrip(t);
+      clearOutput();
+    }
+
+    // Wire buttons
+    $("newTripBtn").addEventListener("click", () => openTripDialog({ mode: "new" }));
+    $("newTripBtn2").addEventListener("click", () => openTripDialog({ mode: "new" }));
+    $("newTripBtn3").addEventListener("click", () => openTripDialog({ mode: "new" }));
+
+    $("manageTripsBtn").addEventListener("click", openManageDialog);
+    $("manageTripsBtn2").addEventListener("click", openManageDialog);
+
+    $("exportBtn").addEventListener("click", openExportDialog);
+    $("importBtn").addEventListener("click", openImportDialog);
+
+    $("calcBtn").addEventListener("click", doCalculate);
+    $("clearValuesBtn").addEventListener("click", clearValuesForActiveTrip);
+
+    // Enter to calculate
+    ["initial","end","max","fuel"].forEach(id => {
+      $(id).addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") doCalculate();
+      });
+    });
+
+    // Trip form save
+    $("tripForm").addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const state = loadState();
+
+      const name = $("tripName").value;
+      const personsRaw = $("tripPersons").value.trim();
+      const persons = personsRaw === "" ? NaN : Number(personsRaw);
+
+      const editingId = $("tripEditingId").value.trim();
+      if (editingId) {
+        updateTrip(state, editingId, {
+          name: (name || "").trim() || todayName(),
+          persons: Number.isFinite(persons) && persons >= 1 ? Math.floor(persons) : 1
+        });
+        setActiveTrip(state, editingId);
+      } else {
+        createTrip(state, name, persons);
+      }
+
+      $("tripDialog").close();
+    });
+
+    // Copy export
+    $("copyExportBtn").addEventListener("click", async () => {
+      const txt = $("exportText").value;
+      try {
+        await navigator.clipboard.writeText(txt);
+        alert("Copied.");
+      } catch {
+        // fallback
+        $("exportText").focus();
+        $("exportText").select();
+        document.execCommand("copy");
+        alert("Copied.");
+      }
+    });
+
+    // Import
+    $("importForm").addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const raw = $("importText").value;
+      const res = applyImport(raw);
+      if (!res.ok) {
+        alert(res.error);
+        return;
+      }
+      $("importDialog").close();
+    });
+
+    // When manage dialog opens, refresh list
+    $("manageDialog").addEventListener("close", () => {
+      // noop
+    });
+
+    // Manage dialog list is re-rendered in render()
+    // Add delegation for list actions already wired per item.
+
+    // Initialize
+    wireAutosaveInputs();
+    render();
+  </script>
+</body>
+</html>
