@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Trip Fuel Cost Calculator</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    p { margin: 0 0 16px; opacity: 0.9; }
+    .card { border: 1px solid rgba(127,127,127,0.35); border-radius: 12px; padding: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    label { display: block; font-size: 13px; margin: 0 0 6px; opacity: 0.9; }
+    input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(127,127,127,0.35); background: transparent; }
+    .row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    button {
+      padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(127,127,127,0.35);
+      background: rgba(127,127,127,0.12); cursor: pointer;
+    }
+    button:hover { background: rgba(127,127,127,0.18); }
+    .out { margin-top: 14px; padding: 12px; border-radius: 10px; background: rgba(127,127,127,0.12); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .err { color: #d11; }
+    .muted { opacity: 0.85; font-size: 13px; margin-top: 10px; line-height: 1.35; }
+    .small { font-size: 12px; opacity: 0.85; }
+    .kvs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .kv { padding: 10px; border-radius: 10px; border: 1px solid rgba(127,127,127,0.25); }
+    .kv .k { font-size: 12px; opacity: 0.8; }
+    .kv .v { margin-top: 4px; font-weight: 650; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Trip Fuel Cost Calculator</h1>
+    <p>Assumes you refueled to <span class="mono">max autonomy</span> at the start, and fuel price is constant. Output can exceed the refill amount if you also consumed some of the initial fuel (valued at the same €/km).</p>
+
+    <div class="card">
+      <div class="grid">
+        <div>
+          <label for="initial">Initial autonomy (km)</label>
+          <input id="initial" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 40" />
+        </div>
+        <div>
+          <label for="end">End autonomy (km)</label>
+          <input id="end" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 90" />
+        </div>
+        <div>
+          <label for="max">Max autonomy (km, full tank)</label>
+          <input id="max" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 300" />
+        </div>
+        <div>
+          <label for="fuel">Total refill cost (€)</label>
+          <input id="fuel" type="number" inputmode="decimal" step="0.01" placeholder="e.g. 70" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="calc">Calculate</button>
+        <button id="swap">Use example</button>
+        <button id="clear">Clear</button>
+      </div>
+
+      <div id="output" class="out" style="display:none;"></div>
+
+      <div class="muted">
+        Formula used:
+        <div class="mono small">
+          km_added = max - initial<br/>
+          €/km = fuel_cost / km_added<br/>
+          km_used = max - end<br/>
+          trip_cost = km_used * €/km
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function parseNum(id) {
+      const v = $(id).value.trim();
+      if (v === "") return NaN;
+      return Number(v);
+    }
+
+    function fmt(n, decimals) {
+      if (!Number.isFinite(n)) return "NaN";
+      return n.toFixed(decimals);
+    }
+
+    function setOutput(html, isError=false) {
+      const out = $("output");
+      out.style.display = "block";
+      out.innerHTML = isError ? `<div class="err">${html}</div>` : html;
+    }
+
+    function calculate() {
+      const initial = parseNum("initial");
+      const end = parseNum("end");
+      const max = parseNum("max");
+      const fuel = parseNum("fuel");
+
+      if (![initial, end, max, fuel].every(Number.isFinite)) {
+        setOutput("Please fill all fields with valid numbers.", true);
+        return;
+      }
+      if (max <= 0) {
+        setOutput("Max autonomy must be > 0.", true);
+        return;
+      }
+      if (initial < 0 || end < 0) {
+        setOutput("Autonomy values must be >= 0.", true);
+        return;
+      }
+      if (fuel < 0) {
+        setOutput("Fuel cost must be >= 0.", true);
+        return;
+      }
+      if (initial >= max) {
+        setOutput("Initial autonomy must be less than max autonomy (you can’t refill to full otherwise).", true);
+        return;
+      }
+      if (end > max) {
+        setOutput("End autonomy must be <= max autonomy.", true);
+        return;
+      }
+
+      const kmAdded = max - initial;
+      const eurPerKm = fuel / kmAdded;
+      const kmUsed = max - end;
+      const tripCost = kmUsed * eurPerKm;
+
+      const leftoverFromRefillKm = Math.max(0, end - initial); // leftover that is from the refuel (if any)
+      const usedFromInitialKm = Math.max(0, initial - end);     // extra used beyond the refill (if any)
+
+      setOutput(`
+        <div class="kvs">
+          <div class="kv">
+            <div class="k">Trip fuel cost (€)</div>
+            <div class="v">€ ${fmt(tripCost, 2)}</div>
+          </div>
+          <div class="kv">
+            <div class="k">Unit cost</div>
+            <div class="v">€ ${fmt(eurPerKm, 4)} <span class="small">per km</span></div>
+          </div>
+          <div class="kv">
+            <div class="k">km added by refill</div>
+            <div class="v">${fmt(kmAdded, 1)} km</div>
+          </div>
+          <div class="kv">
+            <div class="k">km used (from full)</div>
+            <div class="v">${fmt(kmUsed, 1)} km</div>
+          </div>
+        </div>
+
+        <div class="muted" style="margin-top:12px;">
+          Notes:
+          <ul style="margin:8px 0 0 18px;">
+            <li>Trip cost can be greater than the refill cost if the trip also consumed <span class="mono">${fmt(usedFromInitialKm, 1)} km</span> worth of the initial fuel (valued at the same €/km).</li>
+            <li>Estimated leftover range attributable to the refill: <span class="mono">${fmt(leftoverFromRefillKm, 1)} km</span>.</li>
+          </ul>
+        </div>
+      `);
+
+      // Update URL params for easy sharing/bookmarking
+      const params = new URLSearchParams({
+        i: String(initial),
+        e: String(end),
+        m: String(max),
+        f: String(fuel),
+      });
+      history.replaceState(null, "", `${location.pathname}?${params.toString()}`);
+    }
+
+    function loadFromQuery() {
+      const params = new URLSearchParams(location.search);
+      const i = params.get("i");
+      const e = params.get("e");
+      const m = params.get("m");
+      const f = params.get("f");
+      if (i !== null) $("initial").value = i;
+      if (e !== null) $("end").value = e;
+      if (m !== null) $("max").value = m;
+      if (f !== null) $("fuel").value = f;
+      if (i !== null && e !== null && m !== null && f !== null) calculate();
+    }
+
+    $("calc").addEventListener("click", calculate);
+
+    $("swap").addEventListener("click", () => {
+      $("initial").value = "40";
+      $("end").value = "90";
+      $("max").value = "300";
+      $("fuel").value = "70";
+      calculate();
+    });
+
+    $("clear").addEventListener("click", () => {
+      $("initial").value = "";
+      $("end").value = "";
+      $("max").value = "";
+      $("fuel").value = "";
+      $("output").style.display = "none";
+      history.replaceState(null, "", location.pathname);
+    });
+
+    ["initial","end","max","fuel"].forEach(id => {
+      $(id).addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") calculate();
+      });
+    });
+
+    loadFromQuery();
+  </script>
+</body>
+</html>
