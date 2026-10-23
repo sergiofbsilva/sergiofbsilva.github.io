@@ -33,6 +33,9 @@
     .rank-row b { color:#f1f8ff; }
     .error { color:#ff7eb4 !important; min-height:17px; margin-top:5px !important; font-size:11px !important; }
     .bottom { align-self:center; color:#7892ad; font-size:9px; letter-spacing:.14em; text-transform:uppercase; text-align:center; }
+    .fire-btn { position:absolute; right:16px; bottom:48px; z-index:2; pointer-events:auto; width:76px; height:76px; border:2px solid #b2ffffaa; border-radius:50%; background:radial-gradient(circle at 35% 28%,#5af5ef,#148ba8 62%,#092944); color:#f1ffff; box-shadow:0 0 22px #38e7ff77,inset 0 0 12px #d9ffff55; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; font:inherit; font-size:9px; font-weight:800; letter-spacing:.08em; cursor:pointer; touch-action:manipulation; user-select:none; }
+    .fire-btn b { font-size:18px; line-height:1; color:#fff; }
+    .fire-btn:active { transform:scale(.92); box-shadow:0 0 32px #38e7ffcc,inset 0 0 18px #d9ffff99; }
     .hidden { display:none; }
     @media (max-height:560px) { .hud { padding:12px; } .message { padding:14px; } .message h1 { font-size:26px; } .message p { font-size:11px; } }
   </style>
@@ -63,6 +66,7 @@
         <div id="game-ranking" class="ranking"></div>
       </section>
       <section id="pause-screen" class="message hidden"><div class="eyebrow">Corrida suspensa</div><h1>Pausa.</h1><p>Íris espera por ti. Carrega em P ou toca no botão para continuar.</p><button id="resume-game" class="start">Continuar</button></section>
+      <button id="fire-btn" class="fire-btn hidden" aria-label="Disparar"><span>DISPARAR</span><b>6</b></button>
       <div class="bottom" id="hint">← → mudar de faixa &nbsp; · &nbsp; ↑ saltar &nbsp; · &nbsp; ↓ deslizar &nbsp; · &nbsp; Espaço disparar &nbsp; · &nbsp; P pausa</div>
     </div>
   </main>
@@ -70,7 +74,7 @@
 (() => {
   const canvas = document.querySelector('#c'), ctx = canvas.getContext('2d');
   const intro = document.querySelector('#intro'), over = document.querySelector('#over');
-  const distEl = document.querySelector('#distance'), fragEl = document.querySelector('#fragments'), ammoEl=document.querySelector('#ammo');
+  const distEl = document.querySelector('#distance'), fragEl = document.querySelector('#fragments'), ammoEl=document.querySelector('#ammo'), fireBtn=document.querySelector('#fire-btn');
   const soundBtn = document.querySelector('#sound');
   const nameInput=document.querySelector('#player-name'), playerSelect=document.querySelector('#player-select');
   const nameError=document.querySelector('#name-error'), startButton=document.querySelector('#start-game');
@@ -95,6 +99,7 @@
   startButton.addEventListener('click',e=>{e.stopPropagation();reset();});
   document.querySelector('#retry-game').addEventListener('click',e=>{e.stopPropagation();reset();});
   document.querySelector('#resume-game').addEventListener('click',e=>{e.stopPropagation();togglePause(false);});
+  fireBtn.addEventListener('click',e=>{e.stopPropagation();shoot();});
   let audio=null, musicTimer=null, soundOn=true, beat=0, nextBeat=0;
   function startMusic(){
     if(!soundOn)return;
@@ -134,9 +139,10 @@
   for(let i=0;i<90;i++) stars.push({x:Math.random()*W,y:Math.random()*H,s:Math.random()*1.7+.3,a:Math.random()*.6+.15});
   function laneX(l,z){ return W/2 + l*(42 + z*197); }
   function project(z){ const p=Math.max(0,Math.min(1,z)); return horizon + p*p*(H-horizon); }
-  function reset(){ const name=nameInput.value.trim();if(!name){nameError.textContent='Escreve um nome ou escolhe um jogador guardado.';nameInput.focus();return;}activePlayer=name;nameError.textContent='';running=true;paused=false;ended=false;time=0;distance=0;fragments=0;ammo=6;ammoEl.textContent=ammo;speed=310;spawn=.7;bitSpawn=1.8;obstacles=[];bits=[];shots=[];player={lane:0,x:0,jump:0,slide:0,hit:0};intro.classList.add('hidden');over.classList.add('hidden');pauseScreen.classList.add('hidden');last=performance.now();if(audio)audio.master.gain.setTargetAtTime(soundOn?.22:0,audio.currentTime,.12);startMusic(); }
+  function reset(){ const name=nameInput.value.trim();if(!name){nameError.textContent='Escreve um nome ou escolhe um jogador guardado.';nameInput.focus();return;}activePlayer=name;nameError.textContent='';running=true;paused=false;ended=false;time=0;distance=0;fragments=0;ammo=6;updateAmmo();speed=310;spawn=.7;bitSpawn=1.8;obstacles=[];bits=[];shots=[];player={lane:0,x:0,jump:0,slide:0,hit:0};intro.classList.add('hidden');over.classList.add('hidden');pauseScreen.classList.add('hidden');fireBtn.classList.remove('hidden');last=performance.now();if(audio)audio.master.gain.setTargetAtTime(soundOn?.22:0,audio.currentTime,.12);startMusic(); }
   function togglePause(force){if(!running)return;paused=typeof force==='boolean'?force:!paused;pauseScreen.classList.toggle('hidden',!paused);last=performance.now();if(audio){if(paused)audio.suspend();else if(soundOn)audio.resume();}}
-  function shoot(){if(paused||!running||ammo<=0)return;ammo--;ammoEl.textContent=ammo;shots.push({lane:player.lane,z:.9,dead:false});playSfx('shoot');}
+  function updateAmmo(){ammoEl.textContent=ammo;fireBtn.querySelector('b').textContent=ammo;}
+  function shoot(){if(paused||!running||ammo<=0)return;ammo--;updateAmmo();shots.push({lane:player.lane,z:.9,dead:false});playSfx('shoot');}
   function action(a){ if(paused)return;if(!running){reset();return;} if(a==='left'){const old=player.lane;player.lane=Math.max(-1,player.lane-1);if(old!==player.lane)playSfx('lane');}if(a==='right'){const old=player.lane;player.lane=Math.min(1,player.lane+1);if(old!==player.lane)playSfx('lane');}if(a==='jump'&&player.jump<=0&&player.slide<=0){player.jump=.72;playSfx('jump');}if(a==='slide'&&player.jump<=0){player.slide=.66;playSfx('slide');} }
   window.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select')||e.target.isContentEditable)return;if(e.key.toLowerCase()==='p'){e.preventDefault();togglePause();return;}if(e.code==='Space'){e.preventDefault();shoot();return;}const m={ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right',ArrowUp:'jump',w:'jump',ArrowDown:'slide',s:'slide'};if(m[e.key]){e.preventDefault();action(m[e.key]);}});
   let touch=null;
@@ -196,8 +202,8 @@
   function update(dt){if(!running||paused)return;time+=dt;distance+=dt*speed/26;speed=Math.min(510,310+time*4.1);player.x+=(laneX(player.lane,1)-W/2-player.x)*Math.min(1,dt*12);player.jump=Math.max(0,player.jump-dt);player.slide=Math.max(0,player.slide-dt);spawn-=dt;bitSpawn-=dt;if(spawn<=0){addWall();spawn=Math.max(.54,1.08-time*.008)+(Math.random()*.22);}if(bitSpawn<=0)bitSpawn=addFragment()?2.6:.45;
     obstacles.forEach(o=>{o.z+=dt*speed/790;});
     shots.forEach(s=>{if(s.dead)return;s.z-=dt*2.3;const target=obstacles.find(o=>!o.dead&&o.lane===s.lane&&Math.abs(o.z-s.z)<.12);if(target){target.dead=true;s.dead=true;}else if(s.z<0)s.dead=true;});shots=shots.filter(s=>!s.dead);
-    obstacles.forEach(o=>{if(o.dead)return;if(o.z>.87&&o.z<.97&&o.lane===player.lane){let safe=o.type==='low'?player.jump>0:player.slide>0;if(!safe){running=false;ended=true;stopMusic();saveHighScore();over.classList.remove('hidden');document.querySelector('#final-score').textContent=`${activePlayer}: ${Math.floor(distance)} metros e ${fragments} fragmentos. Íris continua à tua espera.`;}}});obstacles=obstacles.filter(o=>!o.dead&&o.z<1.12);
-    bits.forEach(b=>{b.z+=dt*speed/790;if(!b.taken&&b.z>.86&&b.z<1.02&&b.lane===player.lane){b.taken=true;fragments++;ammo+=3;fragEl.textContent=fragments;ammoEl.textContent=ammo;}});bits=bits.filter(b=>b.z<1.1&&!b.taken);
+    obstacles.forEach(o=>{if(o.dead)return;if(o.z>.87&&o.z<.97&&o.lane===player.lane){let safe=o.type==='low'?player.jump>0:player.slide>0;if(!safe){running=false;ended=true;stopMusic();fireBtn.classList.add('hidden');saveHighScore();over.classList.remove('hidden');document.querySelector('#final-score').textContent=`${activePlayer}: ${Math.floor(distance)} metros e ${fragments} fragmentos. Íris continua à tua espera.`;}}});obstacles=obstacles.filter(o=>!o.dead&&o.z<1.12);
+    bits.forEach(b=>{b.z+=dt*speed/790;if(!b.taken&&b.z>.86&&b.z<1.02&&b.lane===player.lane){b.taken=true;fragments++;ammo+=3;fragEl.textContent=fragments;updateAmmo();}});bits=bits.filter(b=>b.z<1.1&&!b.taken);
     distEl.textContent=String(Math.floor(distance)).padStart(3,'0');
   }
   function loop(now){let dt=Math.min((now-last)/1000,.04);last=now;update(dt);draw();requestAnimationFrame(loop);}requestAnimationFrame(loop);
